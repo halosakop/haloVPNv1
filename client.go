@@ -57,10 +57,19 @@ func main() {
 				log.Printf("udp read err: %v", err)
 				continue
 			}
-			_, err = ifce.Write(buf[:n])
-			if err != nil {
-				log.Printf("tun write err: %v", err)
+			if n > 0 {
+				v := buf[0] >> 4
+				if v == 4 || v == 6 {
+					_, err = ifce.Write(buf[:n])
+					if err != nil {
+						log.Printf("tun write err: %v", err)
+					}
+				} else {
+					// non-IP keepalive packet, ignore
+					log.Printf("Ignored non-IP packet: 0x%x", buf[0])
+				}
 			}
+
 		}
 	}()
 
@@ -84,7 +93,7 @@ func main() {
 		}
 	}()
 
-	// keepalive (simple) - can be replaced with better logic
+	// keepalive (simple)
 	go func() {
 		for {
 			_, _ = conn.Write([]byte{0})

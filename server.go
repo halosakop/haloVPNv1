@@ -52,11 +52,20 @@ func main() {
 				clientAddr = raddr
 				log.Printf("Registered client: %v", clientAddr)
 			}
-			// write payload into TUN (expected to be raw IP packet)
-			_, err = ifce.Write(buf[:n])
-			if err != nil {
-				log.Printf("tun write error: %v", err)
+			// validate: first nibble must be 4 (IPv4) or 6 (IPv6)
+			if n > 0 {
+				v := buf[0] >> 4
+				if v == 4 || v == 6 {
+					_, err = ifce.Write(buf[:n])
+					if err != nil {
+						log.Printf("tun write error: %v", err)
+					}
+				} else {
+					// ignore keepalives / control packets
+					log.Printf("Ignored non-IP packet from %v: 0x%x", raddr, buf[0])
+				}
 			}
+
 		}
 	}()
 

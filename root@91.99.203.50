@@ -1,121 +1,61 @@
 package main
 
 import (
-	"flag"
-	"io"
 	"log"
 	"net"
-	"os"
-	"os/signal"
-	"syscall"
-	"time"
-
-	"github.com/songgao/water"
 )
 
-const maxUDPSizes = 65535
-
 func main() {
-	port := flag.Int("port", 51820, "UDP listen port")
-	flag.Parse()
-
-	// create TUN
-	cfg := water.Config{DeviceType: water.TUN}
-	ifce, err := water.New(cfg)
+	listenAddr, err := net.ResolveUDPAddr("udp", ":5000") // server listens on port 5000
 	if err != nil {
-		log.Fatalf("create tun: %v", err)
+		log.Fatal(err)
 	}
-	log.Printf("Opened TUN interface: %s", ifce.Name())
-	// NOTE: configure IP for this interface after the program starts (see steps)
 
-	// listen UDP
-	addr := net.UDPAddr{Port: *port}
-	udp, err := net.ListenUDP("udp", &addr)
+	conn, err := net.ListenUDP("udp", listenAddr)
 	if err != nil {
-		log.Fatalf("listen udp: %v", err)
+		log.Fatal(err)
 	}
-	log.Printf("Listening on UDP :%d", *port)
+	defer conn.Close()
 
-	var clientAddr *net.UDPAddr
+	buf := make([]byte, 1500)
 
-	// UDP -> TUN
-	go func() {
-		buf := make([]byte, maxUDPSizes)
-		for {
-			n, raddr, err := udp.ReadFromUDP(buf)
-			if err != nil {
-				log.Printf("udp read error: %v", err)
-				continue
-			}
-			// register/update single client address
-			if clientAddr == nil || clientAddr.String() != raddr.String() {
-				clientAddr = raddr
-				log.Printf("Registered client: %v", clientAddr)
-			}
-			// validate: first nibble must be 4 (IPv4) or 6 (IPv6)
-			if n > 0 {
-				v := buf[0] >> 4
-				if v == 4 || v == 6 {
-					_, err = ifce.Write(buf[:n])
-					if err != nil {
-						log.Printf("tun write error: %v", err)
-					}
-				} else {
-					// ignore keepalives / control packets
-					log.Printf("Ignored non-IP packet from %v: 0x%x", raddr, buf[0])
-				}
-			}
+	log.Println("Relay server started on UDP port 5000")
 
+	for {
+		n, clientAddr, err := conn.ReadFromUDP(buf)
+		if err != nil {
+			log.Println("read error:", err)
+			continue
 		}
-	}()
 
-	// TUN -> UDP
-	go func() {
-		pkt := make([]byte, maxUDPSizes)
-		for {
-			n, err := ifce.Read(pkt)
-			if err != nil {
-				if err == io.EOF {
-					return
-				}
-				log.Printf("tun read error: %v", err)
-				continue
-			}
-			if clientAddr == nil {
-				// no client yet: drop packet
-				continue
-			}
-			_, err = udp.WriteToUDP(pkt[:n], clientAddr)
-			if err != nil {
-				log.Printf("udp write error: %v", err)
-			}
+		// Forward incoming packet to Google DNS
+		targetAddr, _ := net.ResolveUDPAddr("udp", "8.8.8.8:53")
+		remoteConn, err := net.DialUDP("udp", nil, targetAddr)
+		if err != nil {
+			log.Println("dial error:", err)
+			continue
 		}
-	}()
 
-	// keepalive to keep NAT mapping alive (if behind NAT)
-	go func() {
-		ticker := make(chan struct{})
-		// simple tick without importing time (small, explicit)
-		// use a small goroutine to sleep + send signal
-		go func() {
-			for {
-				// sleep 15s
-				time.Sleep(15 * time.Second)
-				ticker <- struct{}{}
-			}
-		}()
-		for range ticker {
-			if clientAddr != nil {
-				_, _ = udp.WriteToUDP([]byte{0}, clientAddr)
-			}
+		_, err = remoteConn.Write(buf[:n])
+		if err != nil {
+			log.Println("forward error:", err)
+			remoteConn.Close()
+			continue
 		}
-	}()
 
-	// wait for ctrl-c
-	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
-	<-sig
-	log.Println("shutting down")
-	udp.Close()
-	ifce.Close()
+		// Read response from Google DNS
+		resp := make([]byte, 1500)
+		rn, _, err := remoteConn.ReadFromUDP(resp)
+		remoteConn.Close()
+		if err != nil {
+			log.Println("response error:", err)
+			continue
+		}
+
+		// Send back to original client
+		_, err = conn.WriteToUDP(resp[:rn], clientAddr)
+		if err != nil {
+			log.Println("send back error:", err)
+		}
+	}
 }

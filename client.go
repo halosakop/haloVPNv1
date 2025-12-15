@@ -1,3 +1,4 @@
+// client.go
 package main
 
 import (
@@ -7,6 +8,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/songgao/water"
@@ -15,35 +17,36 @@ import (
 const maxUDPSize = 65535
 
 func main() {
-	server := flag.String("server", "", "server host:port")
+	server := flag.String("server", "", "server address host:port (required)")
 	flag.Parse()
 
 	if *server == "" {
-		log.Fatalf("Provide -server host:port")
+		log.Fatalf("provide -server host:port")
 	}
 
+	// create TUN
 	cfg := water.Config{DeviceType: water.TUN}
 	ifce, err := water.New(cfg)
 	if err != nil {
-		log.Fatalf("TUN create error: %v", err)
+		log.Fatalf("create tun: %v", err)
 	}
-
 	log.Printf("Opened TUN interface: %s", ifce.Name())
+	// configure IP for this interface after startup (see steps)
 
+	// dial UDP to server
 	raddr, err := net.ResolveUDPAddr("udp", *server)
 	if err != nil {
-		log.Fatalf("resolve error: %v", err)
+		log.Fatalf("resolve server: %v", err)
 	}
-
 	conn, err := net.DialUDP("udp", nil, raddr)
 	if err != nil {
-		log.Fatalf("dial error: %v", err)
+		log.Fatalf("dial udp: %v", err)
 	}
-
+	defer conn.Close()
 	log.Printf("Connected to server %s", raddr.String())
 
-	// Send valid IPv4 header probe instead of "hello"
-	conn.Write([]byte{0x45, 0, 0, 0})
+	// send initial registration / keepalive
+	_, _ = conn.Write([]byte("hello"))
 
 	// UDP -> TUN
 	go func() {
@@ -51,12 +54,22 @@ func main() {
 		for {
 			n, err := conn.Read(buf)
 			if err != nil {
+				log.Printf("udp read err: %v", err)
 				continue
 			}
-			v := buf[0] >> 4
-			if v == 4 || v == 6 {
-				ifce.Write(buf[:n])
+			if n > 0 {
+				v := buf[0] >> 4
+				if v == 4 || v == 6 {
+					_, err = ifce.Write(buf[:n])
+					if err != nil {
+						log.Printf("tun write err: %v", err)
+					}
+				} else {
+					// non-IP keepalive packet, ignore
+					log.Printf("Ignored non-IP packet: 0x%x", buf[0])
+				}
 			}
+
 		}
 	}()
 
@@ -69,21 +82,28 @@ func main() {
 				if err == io.EOF {
 					return
 				}
+				log.Printf("tun read err: %v", err)
 				continue
 			}
-			conn.Write(pkt[:n])
+			// send raw IP packet to server
+			_, err = conn.Write(pkt[:n])
+			if err != nil {
+				log.Printf("udp write err: %v", err)
+			}
 		}
 	}()
 
-	// keepalive
+	// keepalive (simple)
 	go func() {
 		for {
-			conn.Write([]byte{0x45, 0, 0, 0})
-			time.Sleep(5 * time.Second)
+			_, _ = conn.Write([]byte{0})
+			time.Sleep(15 * time.Second)
 		}
 	}()
 
+	// wait for ctrl-c
 	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, os.Interrupt)
+	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
 	<-sig
+	log.Println("stopping client")
 }

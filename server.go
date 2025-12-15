@@ -6,6 +6,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"os/exec" // Added to run system commands
 	"os/signal"
 	"syscall"
 	"time"
@@ -14,21 +15,37 @@ import (
 )
 
 const maxUDPSizes = 65535
+const serverIP = "10.0.0.1"
 
 func main() {
-	port := flag.Int("port", 51820, "UDP listen port")
+	port := flag.Int("port", 443, "UDP listen port") // Default changed to 443 to match your usage
 	flag.Parse()
 
-	// create TUN
+	// 1. Create TUN Interface
 	cfg := water.Config{DeviceType: water.TUN}
 	ifce, err := water.New(cfg)
 	if err != nil {
 		log.Fatalf("create tun: %v", err)
 	}
 	log.Printf("Opened TUN interface: %s", ifce.Name())
-	// NOTE: configure IP for this interface after the program starts (see steps)
 
-	// listen UDP
+	// 2. CONFIGURE IP (The Fix)
+	// We run the system commands here, keeping the interface alive.
+	log.Printf("Configuring interface %s with IP %s...", ifce.Name(), serverIP)
+
+	// Command: ip addr add 10.0.0.1/24 dev tun0
+	cmdAddr := exec.Command("ip", "addr", "add", serverIP+"/24", "dev", ifce.Name())
+	if out, err := cmdAddr.CombinedOutput(); err != nil {
+		log.Printf("Error adding IP: %v, output: %s", err, out)
+	}
+
+	// Command: ip link set tun0 up
+	cmdUp := exec.Command("ip", "link", "set", ifce.Name(), "up")
+	if out, err := cmdUp.CombinedOutput(); err != nil {
+		log.Printf("Error setting link up: %v, output: %s", err, out)
+	}
+
+	// 3. Start UDP Listener
 	addr := net.UDPAddr{Port: *port}
 	udp, err := net.ListenUDP("udp", &addr)
 	if err != nil {
@@ -47,25 +64,18 @@ func main() {
 				log.Printf("udp read error: %v", err)
 				continue
 			}
-			// register/update single client address
+			// Update client address dynamically
 			if clientAddr == nil || clientAddr.String() != raddr.String() {
 				clientAddr = raddr
-				log.Printf("Registered client: %v", clientAddr)
-			}
-			// validate: first nibble must be 4 (IPv4) or 6 (IPv6)
-			if n > 0 {
-				v := buf[0] >> 4
-				if v == 4 || v == 6 {
-					_, err = ifce.Write(buf[:n])
-					if err != nil {
-						log.Printf("tun write error: %v", err)
-					}
-				} else {
-					// ignore keepalives / control packets
-					log.Printf("Ignored non-IP packet from %v: 0x%x", raddr, buf[0])
-				}
+				log.Printf("New client connected: %v", clientAddr)
 			}
 
+			if n > 0 {
+				_, err = ifce.Write(buf[:n])
+				if err != nil {
+					log.Printf("tun write error: %v", err)
+				}
+			}
 		}
 	}()
 
@@ -82,7 +92,6 @@ func main() {
 				continue
 			}
 			if clientAddr == nil {
-				// no client yet: drop packet
 				continue
 			}
 			_, err = udp.WriteToUDP(pkt[:n], clientAddr)
@@ -92,30 +101,19 @@ func main() {
 		}
 	}()
 
-	// keepalive to keep NAT mapping alive (if behind NAT)
+	// Keep NAT alive
 	go func() {
-		ticker := make(chan struct{})
-		// simple tick without importing time (small, explicit)
-		// use a small goroutine to sleep + send signal
-		go func() {
-			for {
-				// sleep 15s
-				time.Sleep(15 * time.Second)
-				ticker <- struct{}{}
-			}
-		}()
-		for range ticker {
+		for {
+			time.Sleep(15 * time.Second)
 			if clientAddr != nil {
-				_, _ = udp.WriteToUDP([]byte{0}, clientAddr)
+				udp.WriteToUDP([]byte{0}, clientAddr)
 			}
 		}
 	}()
 
-	// wait for ctrl-c
+	// Wait for exit signal
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
 	<-sig
-	log.Println("shutting down")
-	udp.Close()
-	ifce.Close()
+	log.Println("Shutting down...")
 }

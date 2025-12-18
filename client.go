@@ -1,89 +1,59 @@
 package main
 
 import (
-	"flag"
-	"io"
 	"log"
 	"net"
-	"os"
-	"os/signal"
-	"time"
 
 	"github.com/songgao/water"
 )
 
-const maxUDPSize = 65535
+const mtu = 1500
+
+func isIPv4(pkt []byte) bool {
+	return len(pkt) >= 20 && pkt[0]>>4 == 4
+}
 
 func main() {
-	server := flag.String("server", "", "server host:port")
-	flag.Parse()
-
-	if *server == "" {
-		log.Fatalf("Provide -server host:port")
+	cfg := water.Config{
+		DeviceType: water.TUN,
 	}
-
-	cfg := water.Config{DeviceType: water.TUN}
 	ifce, err := water.New(cfg)
 	if err != nil {
-		log.Fatalf("TUN create error: %v", err)
+		log.Fatal(err)
 	}
+	log.Println("TUN:", ifce.Name())
 
-	log.Printf("Opened TUN interface: %s", ifce.Name())
-
-	raddr, err := net.ResolveUDPAddr("udp", *server)
+	server, _ := net.ResolveUDPAddr("udp", "91.99.203.50:51820")
+	conn, err := net.DialUDP("udp", nil, server)
 	if err != nil {
-		log.Fatalf("resolve error: %v", err)
+		log.Fatal(err)
 	}
-
-	conn, err := net.DialUDP("udp", nil, raddr)
-	if err != nil {
-		log.Fatalf("dial error: %v", err)
-	}
-
-	log.Printf("Connected to server %s", raddr.String())
-
-	// Send valid IPv4 header probe instead of "hello"
-	conn.Write([]byte{0x45, 0, 0, 0})
 
 	// UDP -> TUN
 	go func() {
-		buf := make([]byte, maxUDPSize)
+		buf := make([]byte, mtu)
 		for {
 			n, err := conn.Read(buf)
 			if err != nil {
 				continue
 			}
-			v := buf[0] >> 4
-			if v == 4 || v == 6 {
-				ifce.Write(buf[:n])
+			if !isIPv4(buf[:n]) {
+				continue
 			}
+			ifce.Write(buf[:n])
 		}
 	}()
 
 	// TUN -> UDP
-	go func() {
-		pkt := make([]byte, maxUDPSize)
-		for {
-			n, err := ifce.Read(pkt)
-			if err != nil {
-				if err == io.EOF {
-					return
-				}
-				continue
-			}
-			conn.Write(pkt[:n])
+	pkt := make([]byte, mtu)
+	for {
+		n, err := ifce.Read(pkt)
+		if err != nil {
+			continue
 		}
-	}()
-
-	// keepalive
-	go func() {
-		for {
-			conn.Write([]byte{0x45, 0, 0, 0})
-			time.Sleep(5 * time.Second)
+		if !isIPv4(pkt[:n]) {
+			continue
 		}
-	}()
-
-	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, os.Interrupt)
-	<-sig
+		conn.Write(pkt[:n])
+	}
 }

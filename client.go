@@ -36,6 +36,8 @@ func main() {
 	block, _ := aes.NewCipher([]byte(key)) //sifrovanie pomocou AES
 	aesgcm, _ := cipher.NewGCM(block)
 	nonce := make([]byte, aesgcm.NonceSize())
+	log.Println(ifce.Name())
+	_ = exec.Command("bash", "./client.sh")
 
 	// UDP -> TUN (dekriptovanie a zapis do TUN)
 	go func() { //spustenie gorutiny pre prijimanie UDP paketov

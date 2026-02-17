@@ -36,6 +36,8 @@ func main() {
 	block, _ := aes.NewCipher([]byte(key)) //kryptovanie pomocou AES, vytvorenie cipher bloku s klucom
 	aesgcm, _ := cipher.NewGCM(block)
 	nonce := make([]byte, aesgcm.NonceSize())
+
+	log.Println(ifce.Name())
 	_ = exec.Command("bash", "./server.sh")
 
 	var client *net.UDPAddr

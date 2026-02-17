@@ -6,6 +6,7 @@ import (
 	"github.com/songgao/water"
 	"log"
 	"net"
+	"os/exec"
 )
 
 const (
@@ -30,10 +31,12 @@ func main() {
 		log.Fatal("Neprebehlo pocuvanie na UDP:", err)
 	}
 	log.Println("Pocuvanie na UDP:", addr.Port)
+	log.Println(ifce.Name())
 
 	block, _ := aes.NewCipher([]byte(key)) //kryptovanie pomocou AES, vytvorenie cipher bloku s klucom
 	aesgcm, _ := cipher.NewGCM(block)
 	nonce := make([]byte, aesgcm.NonceSize())
+	_ = exec.Command("bash", "./server.sh")
 
 	var client *net.UDPAddr
 

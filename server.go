@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"fmt"
 	"github.com/songgao/water"
 	"log"
 	"net"
@@ -31,14 +32,19 @@ func main() {
 		log.Fatal("Neprebehlo pocuvanie na UDP:", err)
 	}
 	log.Println("Pocuvanie na UDP:", addr.Port)
-	log.Println(ifce.Name())
 
 	block, _ := aes.NewCipher([]byte(key)) //kryptovanie pomocou AES, vytvorenie cipher bloku s klucom
 	aesgcm, _ := cipher.NewGCM(block)
 	nonce := make([]byte, aesgcm.NonceSize())
 
 	log.Println(ifce.Name())
-	_ = exec.Command("bash", "./server.sh")
+	cmd := exec.Command("bash", "./server.sh")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		log.Printf("Output: %s", string(out)) //Errory z bash skriptu
+		log.Fatalf("Komand nepresiel: %v", err)
+	}
+	fmt.Println(string(out))
 
 	var client *net.UDPAddr
 

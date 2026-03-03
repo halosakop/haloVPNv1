@@ -3,9 +3,11 @@ package main
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"fmt"
 	"github.com/songgao/water"
 	"log"
 	"net"
+	"os/exec"
 )
 
 const (
@@ -37,7 +39,13 @@ func main() {
 	aesgcm, _ := cipher.NewGCM(block)
 	nonce := make([]byte, aesgcm.NonceSize())
 	log.Println(ifce.Name())
-	_ = exec.Command("bash", "./client.sh")
+	cmd := exec.Command("bash", "./client.sh")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		log.Printf("Output: %s", string(out)) //Errory z bash skriptu
+		log.Fatalf("Komand nepresiel: %v", err)
+	}
+	fmt.Println(string(out))
 
 	// UDP -> TUN (dekriptovanie a zapis do TUN)
 	go func() { //spustenie gorutiny pre prijimanie UDP paketov

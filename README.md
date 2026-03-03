@@ -3,7 +3,7 @@
 
 Point of using HaloVPN is to hide your public IP addres and to encrypt your internet communication.
 HaloVPN uses virtual TUN adapters to configure and read packets. These TUN adapters gets configured using [Water](https://github.com/songgao/water) Library by Songgao.
-For encryption HaloVPN is using AES. HaloVPN currently only support MacOS but it will be increased to all OS in future. For more information visit [halovpn.app](https://halovpn.app)
+For encryption HaloVPN is using AES. HaloVPN currently only support MacOS but it will be increased to all OS in future.
 
 ## Settings
 ```net.ResolveUDPAddr("udp", "90.90.90.90:51820") ```
@@ -32,3 +32,6 @@ const (
 
 ```
 HaloVPN can also be used with GUI
+
+
+

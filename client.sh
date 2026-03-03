@@ -11,7 +11,7 @@ fi
 
  ifconfig "$INTERFACE" inet 10.0.0.2 10.0.0.1 up
  route add -host 10.0.0.1 -interface "$INTERFACE"
-SERVER_IP="91.99.203.50"
+SERVER_IP="ip of your server"
  route add -host "$SERVER_IP" "$GATEWAY"
 
  route add -host 8.8.8.8 "$GATEWAY"

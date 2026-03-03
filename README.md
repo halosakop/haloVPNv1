@@ -31,7 +31,7 @@ const (
 )
 
 ```
-HaloVPN can also be used with GUI
+HaloVPN can also be used with [GUI](https://github.com/halosakop/VPN-MAUI)
 
 For automatic client and server configuration client.sh and server.sh scripts can be used. In client.sh script you need to configure the server IP address.
 ```

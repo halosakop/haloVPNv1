@@ -2,7 +2,7 @@
 ## HaloVPN encrypts the connection between client and the server
 
 Point of using HaloVPN is to hide your public IP addres and to encrypt your internet communication.
-HaloVPN uses virtual TUN adapters to configure and read packets. These TUN adapters gets configured using [Water](https://github.com/songgao/water) Library by Songgao.
+HaloVPN uses virtual TUN adapters to configure and read packets. These TUN adapters gets configured using [Water](https://github.com/songgao/water) Library by Songgao.     
 For encryption HaloVPN is using AES. HaloVPN currently only support MacOS but it will be increased to all OS in future. For more information visit [halovpn.app](https://halovpn.app)
 
 ## Settings
@@ -32,6 +32,16 @@ const (
 
 ```
 HaloVPN can also be used with GUI
+
+For automatic client and server configuration client.sh and server.sh scripts can be used. In client.sh script you need to configure the server IP address.
+```
+SERVER_IP="ip of your server"
+```
+In clint.sh you can also change the DNS server that will be used. The default DNS server is set to google and cloudflare.
+```
+ route add -host 8.8.8.8 "$GATEWAY"
+ route add -host 1.1.1.1 "$GATEWAY"
+```
 
 
 
